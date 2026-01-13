@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SGC Driver App</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <!-- FIREBASE -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background: #f8fafc; }
+        .page { display: none; min-height: 100vh; flex-direction: column; }
+        .page.active { display: flex; }
+        .task-card { background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+        .task-card.done { border-left: 4px solid #10b981; opacity: 0.6; }
+        .task-card.pending { border-left: 4px solid #3b82f6; }
+        .btn-waze { background-color: #33ccff; color: white; }
+        .btn-maps { background-color: #4285F4; color: white; }
+    </style>
+</head>
+<body>
+
+    <!-- TELA LOGIN -->
+    <div id="p-login" class="page active bg-slate-900 px-6 justify-center">
+        <div class="text-center mb-8">
+            <div class="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white text-3xl mx-auto mb-4"><i class="fas fa-truck"></i></div>
+            <h1 class="text-white text-2xl font-bold">SGC Driver</h1>
+        </div>
+        <div class="bg-white rounded-lg p-2 mb-4">
+            <select id="driver-select" class="w-full p-3 font-bold text-slate-800 outline-none">
+                <option value="" disabled selected>Quem é você?</option>
+                <!-- Preenchido via JS -->
+            </select>
+        </div>
+        <button onclick="login()" class="w-full bg-blue-600 text-white font-bold py-4 rounded-lg shadow-lg">ENTRAR</button>
+    </div>
+
+    <!-- TELA TASKS -->
+    <div id="p-tasks" class="page">
+        <div class="bg-white p-4 shadow-sm border-b sticky top-0 z-10 flex justify-between items-center">
+            <div>
+                <p class="text-[10px] text-slate-400 font-bold uppercase">Motorista</p>
+                <h2 id="u-name" class="font-bold text-lg leading-none text-slate-800">...</h2>
+            </div>
+            <button onclick="logout()" class="text-slate-400"><i class="fas fa-sign-out-alt"></i></button>
+        </div>
+
+        <div id="task-list" class="flex-1 p-4 overflow-y-auto">
+            <p class="text-center text-slate-400 mt-10">Buscando rotas...</p>
+        </div>
+    </div>
+
+    <script>
+        // --- COLE A MESMA CONFIGURAÇÃO DO FIREBASE AQUI ---
+        const firebaseConfig = {
+
+  apiKey: "AIzaSyDTMD5dV9gOGv3bnlbijjUW7322Wl8G7uU",
+
+  authDomain: "sgc-logistica.firebaseapp.com",
+
+  projectId: "sgc-logistica",
+
+  storageBucket: "sgc-logistica.firebasestorage.app",
+
+  messagingSenderId: "919635812656",
+
+  appId: "1:919635812656:web:4ba91db3c511ff109168f5"
+
+};
+        // --------------------------------------------------
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const DRIVERS = ["MARIO", "CLEITON", "MESSIAS", "MARCELO ANDRE", "JAMERSON", "MANSUETO", "JOAO VICTOR", "LUIZ RODRIGUES", "JONES", "EMERSON", "JOZY ALMIR", "JACKSON", "ROBERTO CARLOS", "ERIC", "RODRIGO", "CLOVIS", "JOELITON JACKSON"];
+        let currentUser = null;
+
+        // Init
+        const sel = document.getElementById('driver-select');
+        DRIVERS.sort().forEach(d => {
+            const opt = document.createElement('option');
+            opt.value = d; opt.innerText = d; sel.appendChild(opt);
+        });
+
+        // Check Login
+        const saved = localStorage.getItem('sgc_user');
+        if(saved) { currentUser = saved; showTasks(); }
+
+        function login() {
+            const val = sel.value;
+            if(!val) return alert("Selecione seu nome");
+            currentUser = val;
+            localStorage.setItem('sgc_user', val);
+            showTasks();
+        }
+
+        function logout() {
+            localStorage.removeItem('sgc_user');
+            location.reload();
+        }
+
+        function showTasks() {
+            document.getElementById('p-login').classList.remove('active');
+            document.getElementById('p-tasks').classList.add('active');
+            document.getElementById('u-name').innerText = currentUser;
+
+            // Escutar APENAS as rotas deste motorista
+            db.collection("entregas")
+              .where("motorista", "==", currentUser)
+              .orderBy("timestamp", "asc") // Ordena por hora de criação
+              .onSnapshot(snapshot => {
+                  const list = document.getElementById('task-list');
+                  list.innerHTML = '';
+                  
+                  if(snapshot.empty) {
+                      list.innerHTML = '<div class="text-center mt-20 opacity-50"><i class="fas fa-check-circle text-6xl text-slate-300 mb-4"></i><p>Sem entregas pendentes!</p></div>';
+                      return;
+                  }
+
+                  snapshot.forEach((doc, index) => {
+                      const t = doc.data();
+                      const isDone = t.status === 'concluido';
+                      
+                      const div = document.createElement('div');
+                      div.className = `task-card ${isDone ? 'done' : 'pending'}`;
+                      div.innerHTML = `
+                        <div class="mb-3">
+                            ${t.destino.nome ? `<div class="text-indigo-700 font-bold mb-1"><i class="fas fa-building mr-1"></i> ${t.destino.nome}</div>` : ''}
+                            <div class="text-slate-600 text-sm">${t.destino.texto}</div>
+                        </div>
+                        ${!isDone ? `
+                        <div class="flex gap-2 mb-3">
+                            <a href="https://waze.com/ul?ll=${t.destino.lat},${t.destino.lon}&navigate=yes" class="flex-1 py-2 rounded bg-[#33ccff] text-white font-bold text-center text-sm"><i class="fab fa-waze"></i> Waze</a>
+                            <a href="https://www.google.com/maps/dir/?api=1&destination=${t.destino.lat},${t.destino.lon}" class="flex-1 py-2 rounded bg-blue-600 text-white font-bold text-center text-sm"><i class="fas fa-map"></i> Maps</a>
+                        </div>` : ''}
+                        <button onclick="toggleStatus('${doc.id}', '${t.status}')" class="w-full py-3 rounded font-bold text-sm ${isDone ? 'bg-slate-100 text-slate-500' : 'bg-slate-800 text-white'}">
+                            ${isDone ? 'Desfazer' : 'Concluir Entrega'}
+                        </button>
+                      `;
+                      list.appendChild(div);
+                  });
+              });
+        }
+
+        function toggleStatus(id, currentStatus) {
+            db.collection("entregas").doc(id).update({
+                status: currentStatus === 'pendente' ? 'concluido' : 'pendente'
+            });
+        }
+    </script>
+</body>
+</html>
